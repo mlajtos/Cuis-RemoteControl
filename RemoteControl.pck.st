@@ -1,6 +1,6 @@
-'From Cuis7.7 [latest update: #7948] on 1 July 2026 at 1:38:22 pm'!
+'From Cuis7.7 [latest update: #7948] on 2 July 2026 at 10:04:53 am'!
 'Description '!
-!provides: 'RemoteControl' 1 2!
+!provides: 'RemoteControl' 1 3!
 !requires: 'WebClient' 1 nil 1!
 !requires: 'Graphics-Files-Additional' 1 nil 1!
 SystemOrganization addCategory: #RemoteControl!
@@ -9,7 +9,7 @@ SystemOrganization addCategory: #RemoteControl!
 !classDefinition: #RemoteControl category: #RemoteControl!
 Object subclass: #RemoteControl
 	instanceVariableNames: ''
-	classVariableNames: 'Server'
+	classVariableNames: 'Port Server'
 	poolDictionaries: ''
 	category: 'RemoteControl'!
 !classDefinition: 'RemoteControl class' category: #RemoteControl!
@@ -17,8 +17,16 @@ RemoteControl class
 	instanceVariableNames: ''!
 
 
-!RemoteControl class methodsFor: 'config' stamp: 'ML 13/May/2026 07:52:35'!
-port ^ 2347! !
+!RemoteControl class methodsFor: 'config' stamp: 'ML 2/Jul/2026 10:04:44'!
+port
+	"The TCP port the eval/screenshot server listens on. Defaults to 2347; override with #port:
+	(takes effect on the next #start). Configurable at runtime, no recompilation needed."
+	^ Port ifNil: [2347]! !
+
+!RemoteControl class methodsFor: 'config' stamp: 'ML 2/Jul/2026 10:04:44'!
+port: aPortNumber
+	"Set the listen port. Takes effect on the next #start. Answer the new port."
+	^ Port := aPortNumber! !
 
 !RemoteControl class methodsFor: 'accessing' stamp: 'ML 12/May/2026 22:52:33'!
 isRunning
