@@ -1,6 +1,6 @@
-'From Cuis7.7 [latest update: #7948] on 2 July 2026 at 10:04:53 am'!
+'From Cuis7.9 [latest update: #7983] on 3 July 2026 at 3:41:01 pm'!
 'Description '!
-!provides: 'RemoteControl' 1 3!
+!provides: 'RemoteControl' 1 4!
 !requires: 'WebClient' 1 nil 1!
 !requires: 'Graphics-Files-Additional' 1 nil 1!
 SystemOrganization addCategory: #RemoteControl!
@@ -102,7 +102,7 @@ handleEval: aRequest
 	] on: Error do: [:ex |
 		aRequest sendResponseCode: 500 content: (self errorReportFor: ex) asUtf8Bytes type: 'text/plain; charset=utf-8' close: true]! !
 
-!RemoteControl class methodsFor: 'handlers' stamp: 'ML 28/May/2026 16:21:49'!
+!RemoteControl class methodsFor: 'handlers' stamp: 'ML 3/Jul/2026 15:40:41'!
 handleScreenshot: aRequest
 	"PNG bytes with 200, or plain-text error with 500.
 	Query crop: ?id=<identityHash> | ?morph=<ClassName> | ?x&y&w&h, plus optional ?pad=<n>.
@@ -116,7 +116,7 @@ handleScreenshot: aRequest
 		raw := (params at: 'raw' ifAbsent: ['0']) = '1'.
 		form := raw
 			ifTrue: [Display]
-			ifFalse: [(WorldMorph allInstances first) imageForm: 32].
+			ifFalse: [UISupervisor ui imageForm: 32].
 		rect := self rectFromQuery: query in: form boundingBox.
 		(rect notNil and: [rect area > 0]) ifTrue: [form := form copy: rect].
 		bytes := ByteArray streamContents: [:s | PNGReadWriter putForm: form onStream: s].
@@ -138,7 +138,7 @@ cropRectFor: morph pad: pad in: bigRect
 	b := morph displayFullBounds.
 	^ ((b origin - pad) corner: (b corner + pad)) intersect: bigRect! !
 
-!RemoteControl class methodsFor: 'private' stamp: 'ML 28/May/2026 15:57:08'!
+!RemoteControl class methodsFor: 'private' stamp: 'ML 3/Jul/2026 15:40:41'!
 rectFromQuery: queryString in: bigRect
 	"Returns a Rectangle, or nil if the query has no crop intent. Raises Error if there IS crop
 	intent but it can not be honored (unknown morph/id; partial x/y/w/h spec).
@@ -152,14 +152,14 @@ rectFromQuery: queryString in: bigRect
 	idString := params at: 'id' ifAbsent: [nil].
 	idString ifNotNil: [
 		morph := nil.
-		WorldMorph allInstances first allMorphsDo: [:m |
+		UISupervisor ui allMorphsDo: [:m |
 			(morph isNil and: [m identityHash printString = idString]) ifTrue: [morph := m]].
 		morph ifNil: [^ self error: 'Morph not found by id: ', idString].
 		^ self cropRectFor: morph pad: pad in: bigRect].
 	morphName := params at: 'morph' ifAbsent: [nil].
 	morphName ifNotNil: [
 		morph := nil.
-		WorldMorph allInstances first allMorphsDo: [:m |
+		UISupervisor ui allMorphsDo: [:m |
 			(morph isNil and: [m class name asString = morphName]) ifTrue: [morph := m]].
 		morph ifNil: [^ self error: 'Morph not found: ', morphName].
 		^ self cropRectFor: morph pad: pad in: bigRect].
