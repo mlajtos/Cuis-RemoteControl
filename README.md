@@ -24,7 +24,7 @@ Benign `Notification`s are auto-resumed. Bodies are handled as UTF-8, so non-ASC
 Utilities setAuthorInitials: 'XY' name: 'Your Name'
 ```
 
-(That is the real selector — there is no `setAuthorName:initials:`.) Set it once per image; it persists across snapshots.
+Set it once per image; it persists across snapshots.
 
 ```bash
 curl -s -X POST --data-binary '3 + 4' http://localhost:2347/eval
