@@ -18,6 +18,14 @@ Body = Smalltalk source. The response is the `printString` of the result.
 
 Benign `Notification`s are auto-resumed. Bodies are handled as UTF-8, so non-ASCII source is safe.
 
+**Author initials must be set before compiling.** Cuis stamps every compiled method with the author's initials; if they are unset it opens a blocking dialog — invisible over the bridge, so the image appears to hang at 100% CPU. `/eval` therefore refuses requests with **400** while initials are unset, telling you exactly what to run. Ask the human operator for their name and initials, then:
+
+```smalltalk
+Utilities setAuthorInitials: 'XY' name: 'Your Name'
+```
+
+(That is the real selector — there is no `setAuthorName:initials:`.) Set it once per image; it persists across snapshots.
+
 ```bash
 curl -s -X POST --data-binary '3 + 4' http://localhost:2347/eval
 # => 7
@@ -53,6 +61,42 @@ The package adds one extension — `ClassDescription >> safelyCompile:classified
 ```smalltalk
 Object safelyCompile: 'greeting ^ ''hello''' classified: 'demo'
 ```
+
+## For agents: reflect, don't grep
+
+The image is the source of truth — `.pck.st` and `.changes` files on disk are serialization artifacts that can lag or diverge from what's actually running. **Always interrogate the live image over `/eval`; never search or edit package files on disk unless the human explicitly asks for it.** Everything you'd grep for has a reflective query:
+
+| You want | Ask the image |
+|---|---|
+| a method's source | `(Morph >> #drawOn:) sourceCode` |
+| a class's selectors | `Morph selectors asSortedCollection asArray` (class side: `Morph class selectors`) |
+| does this class exist? | `Smalltalk includesKey: #SomeName` |
+| implementors of a selector | `Smalltalk allImplementorsOf: #drawOn:` |
+| senders of a selector | `Smalltalk allCallsOn: #drawOn:` |
+| a class's definition & comment | `Morph definition` / `Morph comment` |
+| instance variables | `Morph allInstVarNames` |
+| subclasses / superclasses | `Morph subclasses` / `Morph allSuperclasses` |
+| a method's category | `Morph organization categoryOfElement: #drawOn:` |
+| classes in a package | `(CodePackage installedPackages detect: [:p \| p packageName = 'X']) classes` |
+| live instances | `SomeClass allInstances` |
+
+Everything grep does, the image does better — scoped to what actually runs:
+
+| grep habit | Ask the image instead |
+|---|---|
+| grep a string in method bodies | `Smalltalk allMethodsWithSourceString: 'foo' matchCase: false` |
+| grep with a wildcard pattern | `Smalltalk allMethodsSourceStringMatching: '*foo*bar*'` |
+| grep body text under one class hierarchy | `Smalltalk allMethodsWithSourceString: 'foo' matchCase: false scopeClass: Morph includeSubclasses: true includeSuperclasses: false` |
+| find a string/symbol literal | `Smalltalk allMethodsWithString: 'foo'` |
+| grep for a selector fragment | `Symbol selectorsContaining: 'foo'` |
+| selector by pattern | `Symbol selectorsMatching: 'draw*On:'` |
+| fuzzy selector from a typo | `Symbol possibleSelectorsFor: 'drawon'` |
+| find a class by name fragment | `Smalltalk classNames select: [:n \| n includesSubString: 'Morph']` |
+| grep class comments | `Smalltalk browseClassCommentsWithString: 'foo'` *(opens a browser — prefer the queries above for programmatic use)* |
+
+The `allMethods…` queries answer collections of `MethodReference`s — each responds to `actualClass`, `selector`, and `sourceCode`, so you can chain straight into reading the hits.
+
+Compile with `safelyCompile:classified:` (below), then **verify by reading the source back** — not by checking that a symptom went away. To persist a package to disk, use `pkg save` from inside the image, never a text editor.
 
 ## Install
 

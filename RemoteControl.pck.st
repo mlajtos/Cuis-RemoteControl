@@ -1,6 +1,6 @@
-'From Cuis7.9 [latest update: #7983] on 3 July 2026 at 3:41:01 pm'!
+'From Cuis7.9 [latest update: #8137] on 11 August 2026 at 3:34:46 pm'!
 'Description '!
-!provides: 'RemoteControl' 1 4!
+!provides: 'RemoteControl' 1 5!
 !requires: 'WebClient' 1 nil 1!
 !requires: 'Graphics-Files-Additional' 1 nil 1!
 SystemOrganization addCategory: #RemoteControl!
@@ -17,26 +17,26 @@ RemoteControl class
 	instanceVariableNames: ''!
 
 
-!RemoteControl class methodsFor: 'config' stamp: 'ML 2/Jul/2026 10:04:44'!
+!RemoteControl class methodsFor: 'config' stamp: 'ML 2/Jul/2026, 8:04:44 am (UTC)'!
 port
 	"The TCP port the eval/screenshot server listens on. Defaults to 2347; override with #port:
 	(takes effect on the next #start). Configurable at runtime, no recompilation needed."
 	^ Port ifNil: [2347]! !
 
-!RemoteControl class methodsFor: 'config' stamp: 'ML 2/Jul/2026 10:04:44'!
+!RemoteControl class methodsFor: 'config' stamp: 'ML 2/Jul/2026, 8:04:44 am (UTC)'!
 port: aPortNumber
 	"Set the listen port. Takes effect on the next #start. Answer the new port."
 	^ Port := aPortNumber! !
 
-!RemoteControl class methodsFor: 'accessing' stamp: 'ML 12/May/2026 22:52:33'!
+!RemoteControl class methodsFor: 'accessing' stamp: 'ML 12/May/2026, 8:52:33 pm (UTC)'!
 isRunning
 	^ Server notNil! !
 
-!RemoteControl class methodsFor: 'accessing' stamp: 'ML 12/May/2026 22:52:33'!
+!RemoteControl class methodsFor: 'accessing' stamp: 'ML 12/May/2026, 8:52:33 pm (UTC)'!
 server
 	^ Server! !
 
-!RemoteControl class methodsFor: 'lifecycle' stamp: 'ML 1/Jul/2026 12:47:10'!
+!RemoteControl class methodsFor: 'lifecycle' stamp: 'ML 1/Jul/2026, 10:47:10 am (UTC)'!
 start
 	"Stop any previous server and start a fresh one on self port.
 	Endpoints:
@@ -56,13 +56,13 @@ start
 			methods: #('GET').
 	^ Server! !
 
-!RemoteControl class methodsFor: 'lifecycle' stamp: 'ML 12/May/2026 22:55:44'!
+!RemoteControl class methodsFor: 'lifecycle' stamp: 'ML 12/May/2026, 8:55:44 pm (UTC)'!
 stop
 	"Stop and forget the server (idempotent)."
 	Server ifNotNil: [:s | s stopListener].
 	Server := nil! !
 
-!RemoteControl class methodsFor: 'handlers' stamp: 'ML 26/May/2026 10:02:54'!
+!RemoteControl class methodsFor: 'handlers' stamp: 'ML 26/May/2026, 8:02:54 am (UTC)'!
 errorReportFor: anException
 	"500 body for a runtime error: a ClassName: message header line, then a short stack trace
 	trimmed at the user DoIt frame (so the Compiler/bridge harness frames below it are dropped)
@@ -79,30 +79,7 @@ errorReportFor: anException
 		frames do: [:f | report newLine; nextPutAll: '  '; nextPutAll: f printString]].
 	^ report contents! !
 
-!RemoteControl class methodsFor: 'handlers' stamp: 'ML 26/May/2026 10:03:06'!
-handleEval: aRequest
-	"Evaluate the request body as Smalltalk and reply.
-	- success: 200 with the result printString.
-	- undeclared variable (e.g. a Squeak/Pharo class name absent from this image): 400 naming the
-	  variable. The parser raises UndeclaredVariableReference (a Notification carrying the name)
-	  during parsing; the inner handler reports it before the outer blanket resume can swallow it.
-	- any other benign Notification: auto-resumed with true.
-	- any other runtime Error: 500 with a header line plus a short stack trace.
-	Bodies are sent as UTF-8 bytes so char-count equals byte-count: WebRequest uses #size as the
-	Content-Length while encoding UTF-8 on the wire, so a non-ASCII String would corrupt framing."
-	| body |
-	body := aRequest content asString.
-	[[[
-		| value |
-		value := Compiler evaluate: body.
-		^ aRequest send200Response: value printString asUtf8Bytes contentType: 'text/plain; charset=utf-8'
-	] on: UndeclaredVariableReference do: [:ex |
-		aRequest sendResponseCode: 400 content: ('Undeclared variable: ' , ex varName) asUtf8Bytes type: 'text/plain; charset=utf-8' close: true]
-	] on: Notification do: [:ex | ex resume: true]
-	] on: Error do: [:ex |
-		aRequest sendResponseCode: 500 content: (self errorReportFor: ex) asUtf8Bytes type: 'text/plain; charset=utf-8' close: true]! !
-
-!RemoteControl class methodsFor: 'handlers' stamp: 'ML 3/Jul/2026 15:40:41'!
+!RemoteControl class methodsFor: 'handlers' stamp: 'ML 3/Jul/2026, 1:40:41 pm (UTC)'!
 handleScreenshot: aRequest
 	"PNG bytes with 200, or plain-text error with 500.
 	Query crop: ?id=<identityHash> | ?morph=<ClassName> | ?x&y&w&h, plus optional ?pad=<n>.
@@ -129,7 +106,7 @@ handleScreenshot: aRequest
 			type: 'text/plain; charset=utf-8'
 			close: true]! !
 
-!RemoteControl class methodsFor: 'private' stamp: 'ML 28/May/2026 15:57:08'!
+!RemoteControl class methodsFor: 'private' stamp: 'ML 28/May/2026, 1:57:08 pm (UTC)'!
 cropRectFor: morph pad: pad in: bigRect
 	"World-coordinate crop rectangle for morph: its displayFullBounds (geometric -- works even for
 	a fully-transparent morph, where displayBounds is nil, and includes the morph submorphs),
@@ -138,7 +115,7 @@ cropRectFor: morph pad: pad in: bigRect
 	b := morph displayFullBounds.
 	^ ((b origin - pad) corner: (b corner + pad)) intersect: bigRect! !
 
-!RemoteControl class methodsFor: 'private' stamp: 'ML 3/Jul/2026 15:40:41'!
+!RemoteControl class methodsFor: 'private' stamp: 'ML 3/Jul/2026, 1:40:41 pm (UTC)'!
 rectFromQuery: queryString in: bigRect
 	"Returns a Rectangle, or nil if the query has no crop intent. Raises Error if there IS crop
 	intent but it can not be honored (unknown morph/id; partial x/y/w/h spec).
@@ -171,7 +148,36 @@ rectFromQuery: queryString in: bigRect
 		extent: ((params at: 'w') asNumber) @ ((params at: 'h') asNumber))
 		intersect: bigRect! !
 
-!ClassDescription methodsFor: '*RemoteControl' stamp: 'ML 13/May/2026 07:31:26'!
+!RemoteControl class methodsFor: 'requests' stamp: 'ML 11/Aug/2026, 1:34:45 pm (UTC)'!
+handleEval: aRequest
+	"Evaluate the request body as Smalltalk and reply.
+	- success: 200 with the result printString.
+	- undeclared variable (e.g. a Squeak/Pharo class name absent from this image): 400 naming the
+	  variable. The parser raises UndeclaredVariableReference (a Notification carrying the name)
+	  during parsing; the inner handler reports it before the outer blanket resume can swallow it.
+	- any other benign Notification: auto-resumed with true.
+	- any other runtime Error: 500 with a header line plus a short stack trace.
+	Bodies are sent as UTF-8 bytes so char-count equals byte-count: WebRequest uses #size as the
+	Content-Length while encoding UTF-8 on the wire, so a non-ASCII String would corrupt framing."
+	| body |
+	body := aRequest content asString.
+	((Utilities authorInitialsPerSe ifNil: ['']) isEmpty and: [(body includesSubString: 'setAuthor') not]) ifTrue: [
+		^ aRequest sendResponseCode: 400 content: (String streamContents: [:s |
+			s nextPutAll: 'Author initials not set -- Cuis would open a blocking dialog on the first method compile, stalling the image.'; newLine.
+			s nextPutAll: 'Ask your human which name and initials to use, then run over this bridge:'; newLine.
+			s nextPutAll: '  Utilities setAuthorInitials: ''XY'' name: ''Your Name'''; newLine.
+			s nextPutAll: 'and retry your request.']) asUtf8Bytes type: 'text/plain; charset=utf-8' close: true].
+	[[[
+		| value |
+		value := Compiler evaluate: body.
+		^ aRequest send200Response: value printString asUtf8Bytes contentType: 'text/plain; charset=utf-8'
+	] on: UndeclaredVariableReference do: [:ex |
+		aRequest sendResponseCode: 400 content: ('Undeclared variable: ' , ex varName) asUtf8Bytes type: 'text/plain; charset=utf-8' close: true]
+	] on: Notification do: [:ex | ex resume: true]
+	] on: Error do: [:ex |
+		aRequest sendResponseCode: 500 content: (self errorReportFor: ex) asUtf8Bytes type: 'text/plain; charset=utf-8' close: true]! !
+
+!ClassDescription methodsFor: '*RemoteControl' stamp: 'ML 13/May/2026, 5:31:26 am (UTC)'!
 safelyCompile: source classified: aCategory
 	"Compile one method, with the three things bridge callers always want:
 	  - Noisy Notifications (InMidstOfFileinNotification, UndeclaredVariableWarning, ...)
