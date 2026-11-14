@@ -1,0 +1,3 @@
+# Sin conversion de fin de linea: Cuis espera LF y ubica el codigo por posicion de byte
+* -text
+*.st -text linguist-language=Smalltalk

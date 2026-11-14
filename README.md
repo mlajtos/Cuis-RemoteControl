@@ -2,11 +2,30 @@
 
 A tiny HTTP bridge for driving a live [Cuis Smalltalk](https://cuis-smalltalk.github.io/) image from the outside — evaluate code and grab screenshots over `curl`. Built for agent / tooling workflows and remote development against a running image.
 
-> ⚠️ **Security.** `/eval` executes arbitrary Smalltalk sent over plain HTTP with **no authentication**. This is a development tool: it listens on `localhost:2347` and must never be exposed to an untrusted network. Anyone who can reach the port has full control of your image (and machine).
+> **About this fork.** Same API as [mlajtos/Cuis-RemoteControl](https://github.com/mlajtos/Cuis-RemoteControl), plus three hardening changes:
+> 1. The server binds to **127.0.0.1 only**. Upstream calls `WebServer >> listenOn:` without an interface, which listens on every network interface.
+> 2. Every request must carry a **session token** in the `X-RemoteControl-Token` header (see [Authentication](#authentication)).
+> 3. `RemoteControl stop` calls `WebServer >> destroy` instead of `stopListener`, so the listening socket is closed and the port is released immediately.
+>
+> It also adds a `.gitattributes` that disables line-ending conversion, so Windows checkouts keep the LF endings Cuis expects.
+
+> ⚠️ **Security.** `/eval` executes arbitrary Smalltalk sent over plain HTTP. Anyone who holds the token and can reach the port has full control of your image (and machine). This is a development tool: keep it on loopback and treat the token file like a password.
+
+## Authentication
+
+`RemoteControl start` generates a fresh random token (32 hex digits) and writes it to `RemoteControl tokenFile` — `<user base directory>/RemoteControl.token`, which is `Cuis-Smalltalk-Dev-UserFiles/` when Cuis is started from its own folder. `RemoteControl stop` deletes it. Requests without the right `X-RemoteControl-Token` header get **403**.
+
+```bash
+TOKEN=$(cat ../Cuis-Smalltalk-Dev-UserFiles/RemoteControl.token)
+curl -s -X POST -H "X-RemoteControl-Token: $TOKEN" --data-binary '3 + 4' http://127.0.0.1:2347/eval
+# => 7
+```
+
+The token keeps out other local processes and, just as important, web pages: a browser can send a "simple" cross-origin POST to `localhost` without asking, but it cannot add a custom header without a CORS preflight, and this server never grants one. Inside the image, `RemoteControl token` answers the current value.
 
 ## Endpoints
 
-Served on `http://localhost:2347` (see `RemoteControl class >> port`).
+Served on `http://127.0.0.1:2347` (see `RemoteControl class >> port`). The examples below assume `TOKEN` is set as shown above.
 
 ### `POST /eval`
 
@@ -27,14 +46,14 @@ Utilities setAuthorInitials: 'XY' name: 'Your Name'
 Set it once per image; it persists across snapshots.
 
 ```bash
-curl -s -X POST --data-binary '3 + 4' http://localhost:2347/eval
+curl -s -X POST -H "X-RemoteControl-Token: $TOKEN" --data-binary '3 + 4' http://127.0.0.1:2347/eval
 # => 7
 ```
 
 Prefer sending source from a file — it sidesteps the two compounding quoting layers (shell `'…'` and Smalltalk `''…''`):
 
 ```bash
-curl -s -X POST --data-binary @snippet.st http://localhost:2347/eval
+curl -s -X POST -H "X-RemoteControl-Token: $TOKEN" --data-binary @snippet.st http://127.0.0.1:2347/eval
 ```
 
 ### `GET /screenshot`
@@ -51,7 +70,7 @@ Returns a PNG of the world.
 | `?raw=1` | capture the live `Display` buffer (shows drag trails / uninvalidated regions) instead of a clean re-render |
 
 ```bash
-curl -s -o shot.png 'http://localhost:2347/screenshot?morph=SystemWindow&pad=8'
+curl -s -H "X-RemoteControl-Token: $TOKEN" -o shot.png 'http://127.0.0.1:2347/screenshot?morph=SystemWindow&pad=8'
 ```
 
 ## Compiling methods: `safelyCompile:classified:`
@@ -108,9 +127,11 @@ Dependencies (declared in the package, resolved automatically when available on 
 File in `RemoteControl.pck.st` (Installed Packages window, or `Feature require: 'RemoteControl'` with the file on your path), then start the server:
 
 ```smalltalk
-RemoteControl start.        "listen on localhost:2347"
+RemoteControl start.        "listen on 127.0.0.1:2347 and write a new token file"
+RemoteControl token.        "the value for the X-RemoteControl-Token header"
+RemoteControl tokenFile.    "where the token was written"
 RemoteControl isRunning.    "=> true"
-RemoteControl stop.         "shut down"
+RemoteControl stop.         "shut down, release the port, delete the token file"
 ```
 
 ## License
