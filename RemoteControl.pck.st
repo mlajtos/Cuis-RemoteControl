@@ -1,6 +1,6 @@
-'From Cuis7.9 [latest update: #8137] on 11 August 2026 at 3:34:46 pm'!
-'Description '!
-!provides: 'RemoteControl' 1 5!
+'From Cuis7.9 [latest update: #8340] on 14 November 2026 at 1:00:00 pm'!
+'Description HTTP bridge to drive a live Cuis image (eval + screenshots). Listens only on 127.0.0.1 and every request must carry the X-RemoteControl-Token header (see RemoteControl class>>token and >>tokenFile).'!
+!provides: 'RemoteControl' 1 6!
 !requires: 'WebClient' 1 nil 1!
 !requires: 'Graphics-Files-Additional' 1 nil 1!
 SystemOrganization addCategory: #RemoteControl!
@@ -9,7 +9,7 @@ SystemOrganization addCategory: #RemoteControl!
 !classDefinition: #RemoteControl category: #RemoteControl!
 Object subclass: #RemoteControl
 	instanceVariableNames: ''
-	classVariableNames: 'Port Server'
+	classVariableNames: 'Port Server Token'
 	poolDictionaries: ''
 	category: 'RemoteControl'!
 !classDefinition: 'RemoteControl class' category: #RemoteControl!
@@ -28,6 +28,20 @@ port: aPortNumber
 	"Set the listen port. Takes effect on the next #start. Answer the new port."
 	^ Port := aPortNumber! !
 
+!RemoteControl class methodsFor: 'config' stamp: 'rcp 14/Nov/2026, 1:00:00 pm (UTC)'!
+interface
+	"The network interface the server binds to: loopback only, so the bridge is never
+	reachable from other machines on the network (WebServer>>listenOn: alone binds to
+	every interface). Deliberately not configurable."
+	^ #[127 0 0 1]! !
+
+!RemoteControl class methodsFor: 'config' stamp: 'rcp 14/Nov/2026, 1:00:00 pm (UTC)'!
+tokenFile
+	"Where #start writes the session token, so local tools can read it.
+	RemoteControl tokenFile
+	"
+	^ DirectoryEntry userBaseDirectory // 'RemoteControl.token'! !
+
 !RemoteControl class methodsFor: 'accessing' stamp: 'ML 12/May/2026, 8:52:33 pm (UTC)'!
 isRunning
 	^ Server notNil! !
@@ -36,16 +50,28 @@ isRunning
 server
 	^ Server! !
 
-!RemoteControl class methodsFor: 'lifecycle' stamp: 'ML 1/Jul/2026, 10:47:10 am (UTC)'!
+!RemoteControl class methodsFor: 'accessing' stamp: 'rcp 14/Nov/2026, 1:00:00 pm (UTC)'!
+token
+	"The value every request must send in the X-RemoteControl-Token header.
+	A new one is generated on each #start and also written to #tokenFile.
+	RemoteControl token
+	"
+	^ Token! !
+
+!RemoteControl class methodsFor: 'lifecycle' stamp: 'rcp 14/Nov/2026, 1:00:00 pm (UTC)'!
 start
-	"Stop any previous server and start a fresh one on self port.
+	"Stop any previous server and start a fresh one on 127.0.0.1:self port.
+	Every request must carry the header X-RemoteControl-Token: <self token>;
+	the token is regenerated on each start and written to self tokenFile.
 	Endpoints:
-	  POST /eval        Smalltalk source body. JSON response.
+	  POST /eval        Smalltalk source body. Plain-text response.
 	  GET  /screenshot  PNG of the world. Optional ?morph=Class or ?x&y&w&h to crop.
 	For programmatic method compilation, use ClassDescription>>safelyCompile:classified:
 	through /eval - much smaller surface, same safety."
 	self stop.
-	Server := WebServer new listenOn: self port.
+	Token := self newToken.
+	self tokenFile forceWriteStreamDo: [:stream | stream nextPutAll: Token].
+	Server := WebServer new listenOn: self port interface: self interface.
 	Server
 		addService: '/eval'
 			action: [:req | self handleEval: req]
@@ -56,11 +82,35 @@ start
 			methods: #('GET').
 	^ Server! !
 
-!RemoteControl class methodsFor: 'lifecycle' stamp: 'ML 12/May/2026, 8:55:44 pm (UTC)'!
+!RemoteControl class methodsFor: 'lifecycle' stamp: 'rcp 14/Nov/2026, 1:00:00 pm (UTC)'!
 stop
-	"Stop and forget the server (idempotent)."
-	Server ifNotNil: [:s | s stopListener].
-	Server := nil! !
+	"Stop and forget the server and its token (idempotent).
+	#destroy, unlike #stopListener, also closes the listening socket and open connections,
+	so the port is released right away."
+	Server ifNotNil: [:s | s destroy].
+	Server := nil.
+	Token := nil.
+	self tokenFile exists ifTrue: [self tokenFile delete]! !
+
+!RemoteControl class methodsFor: 'private' stamp: 'rcp 14/Nov/2026, 1:00:00 pm (UTC)'!
+newToken
+	"32 random hexadecimal digits."
+	^ String streamContents: [:stream |
+		32 timesRepeat: [stream nextPut: '0123456789abcdef' atRandom]]! !
+
+!RemoteControl class methodsFor: 'private' stamp: 'rcp 14/Nov/2026, 1:00:00 pm (UTC)'!
+isAuthorized: aRequest
+	"Does aRequest carry the current session token? Header names are case-insensitive.
+	Besides keeping out other local processes, this blocks web pages: a browser cannot add a
+	custom header to a cross-origin request without a CORS preflight, which is never granted here."
+	^ Token notNil and: [(aRequest headerAt: 'X-RemoteControl-Token') = Token]! !
+
+!RemoteControl class methodsFor: 'private' stamp: 'rcp 14/Nov/2026, 1:00:00 pm (UTC)'!
+sendForbidden: aRequest
+	^ aRequest sendResponseCode: 403
+		content: 'Missing or wrong X-RemoteControl-Token header. Read the token from RemoteControl tokenFile (or evaluate RemoteControl token in the image).' asUtf8Bytes
+		type: 'text/plain; charset=utf-8'
+		close: true! !
 
 !RemoteControl class methodsFor: 'handlers' stamp: 'ML 26/May/2026, 8:02:54 am (UTC)'!
 errorReportFor: anException
@@ -79,13 +129,14 @@ errorReportFor: anException
 		frames do: [:f | report newLine; nextPutAll: '  '; nextPutAll: f printString]].
 	^ report contents! !
 
-!RemoteControl class methodsFor: 'handlers' stamp: 'ML 3/Jul/2026, 1:40:41 pm (UTC)'!
+!RemoteControl class methodsFor: 'handlers' stamp: 'rcp 14/Nov/2026, 1:00:00 pm (UTC)'!
 handleScreenshot: aRequest
 	"PNG bytes with 200, or plain-text error with 500.
 	Query crop: ?id=<identityHash> | ?morph=<ClassName> | ?x&y&w&h, plus optional ?pad=<n>.
 	?raw=1 captures the LIVE Display buffer (actual on-screen pixels -- shows drag trails and any
 	stale/uninvalidated regions); the default re-renders the world via imageForm: (always clean,
 	so it hides such artifacts)."
+	(self isAuthorized: aRequest) ifFalse: [^ self sendForbidden: aRequest].
 	[
 		| form rect query params raw bytes |
 		query := aRequest rawUrl copyAfter: $?.
@@ -148,7 +199,7 @@ rectFromQuery: queryString in: bigRect
 		extent: ((params at: 'w') asNumber) @ ((params at: 'h') asNumber))
 		intersect: bigRect! !
 
-!RemoteControl class methodsFor: 'requests' stamp: 'ML 11/Aug/2026, 1:34:45 pm (UTC)'!
+!RemoteControl class methodsFor: 'requests' stamp: 'rcp 14/Nov/2026, 1:00:00 pm (UTC)'!
 handleEval: aRequest
 	"Evaluate the request body as Smalltalk and reply.
 	- success: 200 with the result printString.
@@ -160,6 +211,7 @@ handleEval: aRequest
 	Bodies are sent as UTF-8 bytes so char-count equals byte-count: WebRequest uses #size as the
 	Content-Length while encoding UTF-8 on the wire, so a non-ASCII String would corrupt framing."
 	| body |
+	(self isAuthorized: aRequest) ifFalse: [^ self sendForbidden: aRequest].
 	body := aRequest content asString.
 	((Utilities authorInitialsPerSe ifNil: ['']) isEmpty and: [(body includesSubString: 'setAuthor') not]) ifTrue: [
 		^ aRequest sendResponseCode: 400 content: (String streamContents: [:s |
