@@ -2,10 +2,12 @@
 
 A tiny HTTP bridge for driving a live [Cuis Smalltalk](https://cuis-smalltalk.github.io/) image from the outside — evaluate code and grab screenshots over `curl`. Built for agent / tooling workflows and remote development against a running image.
 
-> **About this fork.** Same API as [mlajtos/Cuis-RemoteControl](https://github.com/mlajtos/Cuis-RemoteControl), plus three hardening changes:
+> **About this fork.** Same API as [mlajtos/Cuis-RemoteControl](https://github.com/mlajtos/Cuis-RemoteControl), plus these changes:
 > 1. The server binds to **127.0.0.1 only**. Upstream calls `WebServer >> listenOn:` without an interface, which listens on every network interface.
 > 2. Every request must carry a **session token** in the `X-RemoteControl-Token` header (see [Authentication](#authentication)).
 > 3. `RemoteControl stop` calls `WebServer >> destroy` instead of `stopListener`, so the listening socket is closed and the port is released immediately.
+> 4. `/eval` **decodes the body as UTF-8**. Upstream used `aRequest content asString`, which reads each byte as a Latin-1 character, so `'ñ'` sent from a UTF-8 file arrived as two characters. Bodies that are not valid UTF-8 are still read as Latin-1 (curl on Windows sends command-line arguments that way).
+> 5. `/screenshot` **re-renders the world inside the Morphic UI process**. Rendering it from the request process raced with the UI process in the VectorEngine: the UI could fail with `resume failed` (a Debugger opens in the image) and the request never answered.
 >
 > It also adds a `.gitattributes` that disables line-ending conversion, so Windows checkouts keep the LF endings Cuis expects.
 
@@ -35,7 +37,7 @@ Body = Smalltalk source. The response is the `printString` of the result.
 - **400** — `Undeclared variable: <name>` (a capitalized global / class the image doesn't have).
 - **500** — a header line `ClassName: message`, then a short stack trace trimmed at your `DoIt` frame.
 
-Benign `Notification`s are auto-resumed. Bodies are handled as UTF-8, so non-ASCII source is safe.
+Benign `Notification`s are auto-resumed. Request bodies are decoded as UTF-8 (falling back to Latin-1 when they are not valid UTF-8) and responses are sent as UTF-8, so non-ASCII source is safe.
 
 **Author initials must be set before compiling.** Cuis stamps every compiled method with the author's initials; if they are unset it opens a blocking dialog — invisible over the bridge, so the image appears to hang at 100% CPU. `/eval` therefore refuses requests with **400** while initials are unset, telling you exactly what to run. Ask the human operator for their name and initials, then:
 
@@ -58,7 +60,7 @@ curl -s -X POST -H "X-RemoteControl-Token: $TOKEN" --data-binary @snippet.st htt
 
 ### `GET /screenshot`
 
-Returns a PNG of the world.
+Returns a PNG of the world. The clean re-render runs inside the Morphic UI process (it answers 500 if the UI process does not get to it within 10 seconds, e.g. while a modal dialog is open); `?raw=1` copies the `Display` directly and does not wait for it.
 
 | Query | Meaning |
 |---|---|
@@ -96,7 +98,7 @@ The image is the source of truth — `.pck.st` and `.changes` files on disk are 
 | instance variables | `Morph allInstVarNames` |
 | subclasses / superclasses | `Morph subclasses` / `Morph allSuperclasses` |
 | a method's category | `Morph organization categoryOfElement: #drawOn:` |
-| classes in a package | `(CodePackage installedPackages detect: [:p \| p packageName = 'X']) classes` |
+| classes in a package | `(CodePackage installedPackages detect: [:p \| p packageName = 'X']) classNames` |
 | live instances | `SomeClass allInstances` |
 
 Everything grep does, the image does better — scoped to what actually runs:
